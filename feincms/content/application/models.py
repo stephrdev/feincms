@@ -26,7 +26,13 @@ _local = local()
 def retrieve_page_information(page):
     _local.proximity_info = (page.tree_id, page.lft, page.rght, page.level)
 
-OTHER_APPLICATIONCONTENT_SEPARATOR = '/'
+
+def _empty_reverse_cache():
+    _local.reverse_cache = {}
+
+
+APPLICATIONCONTENT_RE = re.compile(r'^([\.\w]+)/([\.\w]+)$')
+
 
 def reverse(viewname, urlconf=None, args=None, kwargs=None, prefix=None, *vargs, **vkwargs):
     """
@@ -45,35 +51,47 @@ def reverse(viewname, urlconf=None, args=None, kwargs=None, prefix=None, *vargs,
           {% url registration.urls/auth_logout %}
     """
 
-    if isinstance(viewname, basestring) and OTHER_APPLICATIONCONTENT_SEPARATOR in viewname:
+    if isinstance(viewname, basestring) and APPLICATIONCONTENT_RE.match(viewname):
         # try to reverse an URL inside another applicationcontent
-        other_urlconf, other_viewname = viewname.split(OTHER_APPLICATIONCONTENT_SEPARATOR)
+        other_urlconf, other_viewname = viewname.split('/')
 
         if hasattr(_local, 'urlconf') and other_urlconf == _local.urlconf[0]:
             # We are reversing an URL from our own ApplicationContent
             return _reverse(other_viewname, other_urlconf, args, kwargs, _local.urlconf[1], *vargs, **vkwargs)
 
-        # TODO do not use internal feincms data structures as much
-        model_class = ApplicationContent._feincms_content_models[0]
-        contents = model_class.objects.filter(
-            urlconf_path=other_urlconf).select_related('parent')
+        if not hasattr(_local, 'reverse_cache'):
+            _local.reverse_cache = {}
 
+        # Update this when more items are used for the proximity analysis below
         proximity_info = getattr(_local, 'proximity_info', None)
-
         if proximity_info:
-            # Poor man's proximity analysis. Filter by tree_id :-)
-            try:
-                content = contents.get(parent__tree_id=proximity_info[0])
-            except (model_class.DoesNotExist, model_class.MultipleObjectsReturned):
+            urlconf_cache_key = '%s_%s' % (other_urlconf, proximity_info[0])
+        else:
+            urlconf_cache_key = '%s_noprox' % other_urlconf
+
+        if urlconf_cache_key not in _local.reverse_cache:
+            # TODO do not use internal feincms data structures as much
+            model_class = ApplicationContent._feincms_content_models[0]
+            contents = model_class.objects.filter(
+                urlconf_path=other_urlconf).select_related('parent')
+
+            if proximity_info:
+                # Poor man's proximity analysis. Filter by tree_id :-)
+                try:
+                    content = contents.get(parent__tree_id=proximity_info[0])
+                except (model_class.DoesNotExist, model_class.MultipleObjectsReturned):
+                    try:
+                        content = contents[0]
+                    except IndexError:
+                        content = None
+            else:
                 try:
                     content = contents[0]
                 except IndexError:
                     content = None
+            _local.reverse_cache[urlconf_cache_key] = content
         else:
-            try:
-                content = contents[0]
-            except IndexError:
-                content = None
+            content = _local.reverse_cache[urlconf_cache_key]
 
         if content:
             # Save information from _urlconfs in case we are inside another
@@ -170,6 +188,7 @@ class ApplicationContent(models.Model):
 
                 if instance:
                     self.app_config = cls.ALL_APPS_CONFIG[instance.urlconf_path]['config']
+                    self.custom_fields = {}
                     admin_fields    = self.app_config.get('admin_fields', {})
 
                     if isinstance(admin_fields, dict):
@@ -272,3 +291,13 @@ class ApplicationContent(models.Model):
             return output
         else:
             request._feincms_applicationcontents[self.id] = mark_safe(output)
+
+    def save(self, *args, **kwargs):
+        super(ApplicationContent, self).save(*args, **kwargs)
+        # Clear reverse() cache
+        _empty_reverse_cache()
+
+    def delete(self, *args, **kwargs):
+        super(ApplicationContent, self).delete(*args, **kwargs)
+        # Clear reverse() cache
+        _empty_reverse_cache()

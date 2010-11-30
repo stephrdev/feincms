@@ -1,5 +1,5 @@
 {% extends "admin/change_form.html" %}
-{% load i18n admin_modify adminmedia %}
+{% load feincms_compat_tags i18n admin_modify adminmedia %}
 
 
 {% block extrahead %}{{ block.super }}
@@ -14,8 +14,17 @@
 {% endif %}
 
 <script type="text/javascript" src="{{ FEINCMS_ADMIN_MEDIA }}jquery.alerts.js"></script>
+<script type="text/javascript">
+    var feincms = { 
+        {% if FEINCMS_JQUERY_NO_CONFLICT %}
+        "jQuery": jQuery.noConflict(true) 
+        {% else %}
+        "jQuery": jQuery
+        {% endif %}
+    }; 
+</script>
 <script type="text/javascript" src="{{ FEINCMS_ADMIN_MEDIA }}item_editor.js"></script>
-
+       
 {% include "admin/feincms/_messages_js.html" %}
 {% include "admin/feincms/_regions_js.html" %}
 
@@ -27,6 +36,7 @@
 <div class="content_main" id="frontend_editor">
 
 <form method="post" action=".">
+{% csrf_token %}
 <div>
 {% if is_popup %}<input type="hidden" name="_popup" value="1" />{% endif %}
 

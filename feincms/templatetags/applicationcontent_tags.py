@@ -1,60 +1,14 @@
 from django import template
 
+# backwards compatibility import
+from feincms.templatetags.fragment_tags import fragment, get_fragment, has_fragment
 
 register = template.Library()
 
+register.tag(fragment)
+register.tag(get_fragment)
+register.tag(has_fragment)
 
-class FragmentNode(template.Node):
-    def __init__(self, nodelist, request, identifier, mode='append'):
-        self.nodelist = nodelist
-        self.request_var = template.Variable(request)
-        self.identifier_var = template.Variable(identifier)
-        self.mode = mode
-
-    def render(self, context):
-        request = self.request_var.resolve(context)
-        identifier = self.identifier_var.resolve(context)
-        rendered = self.nodelist.render(context)
-
-
-        old = request._feincms_applicationcontents_fragments.get(identifier, u'')
-
-        if self.mode == 'prepend':
-            request._feincms_applicationcontents_fragments[identifier] = rendered + old
-        elif self.mode == 'replace':
-            request._feincms_applicationcontents_fragments[identifier] = rendered
-        else: # append
-            request._feincms_applicationcontents_fragments[identifier] = old + rendered
-
-        return u''
-
-
-@register.tag
-def fragment(parser, token):
-    """
-    {% fragment request "title" %} content ... {% endfragment %}
-
-    or
-
-    {% fragment request "title" (prepend|replace|append) %} content ... {% endfragment %}
-    """
-
-    nodelist = parser.parse(('endfragment'),)
-    parser.delete_first_token()
-
-    return FragmentNode(nodelist, *token.contents.split()[1:])
-
-
-@register.simple_tag
-def get_fragment(request, identifier):
-    """
-    {% get_fragment request "title" %}
-    """
-
-    try:
-        return request._feincms_applicationcontents_fragments[identifier]
-    except (AttributeError, KeyError):
-        return u''
 
 @register.simple_tag
 def feincms_render_region_appcontent(page, region, request):
@@ -70,8 +24,8 @@ def feincms_render_region_appcontent(page, region, request):
             {% feincms_render_region_appcontent feincms_page "main" request %}
         {% endif %}
     """
-    from feincms.templatetags.feincms_tags import feincms_render_region
     from feincms.content.application.models import ApplicationContent
+    from feincms.templatetags.feincms_tags import _render_content
 
-    return feincms_render_region(page, region, request, content_class=ApplicationContent)
-
+    return u''.join(_render_content(content, request=request) for content in\
+        getattr(page.content, region) if isinstance(content, ApplicationContent))

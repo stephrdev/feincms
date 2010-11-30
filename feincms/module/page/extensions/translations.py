@@ -105,8 +105,8 @@ def register(cls, admin_cls):
         blank=True, null=True, verbose_name=_('translation of'),
         related_name='translations',
         limit_choices_to={'language': django_settings.LANGUAGES[0][0]},
-        help_text=_('Leave this empty for entries in the primary language (%s).') % \
-            _(django_settings.LANGUAGES[0][1])))
+        help_text=_('Leave this empty for entries in the primary language.')
+        ))
 
     if settings.FEINCMS_TRANSLATION_POLICY == "EXPLICIT":
         cls.register_request_processors(translations_request_processor_explicit)
@@ -133,6 +133,8 @@ def register(cls, admin_cls):
 
     @monkeypatch_method(cls)
     def available_translations(self):
+        if not self.id: # New, unsaved pages have no translations
+            return []
         if is_primary_language(self.language):
             return self.translations.all()
         elif self.translation_of:
@@ -180,7 +182,6 @@ def register(cls, admin_cls):
     admin_cls.fieldsets[0][1]['fields'].extend(['language', 'translation_of'])
     admin_cls.list_display.extend(['language', 'available_translations_admin'])
     admin_cls.list_filter.extend(['language'])
-    admin_cls.show_on_top.extend(['language'])
 
     admin_cls.raw_id_fields.append('translation_of')
 

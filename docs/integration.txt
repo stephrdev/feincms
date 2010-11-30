@@ -70,7 +70,7 @@ Adapting the 3rd party application for FeinCMS
 
 The integration mechanism is very flexible. It allows the website
 administrator to add the application in multiple places or move the
-integration point around at wish. Obviously, this flexibility puts
+integration point around at will. Obviously, this flexibility puts
 several constraints on the application developer. It is therefore
 probable, that you cannot just drop in a 3rd party application and
 expect it to work. Modifications of ``urls.py`` and the templates
@@ -97,7 +97,7 @@ An example ``urls.py`` follows::
            name='entry_list'),
        url(r'^(?P<year>\d{4})/(?P<month>\d{2})/(?P<day>\d{2})/(?P<slug>[^/]+)/',
            'django.views.generic.date_based.object_detail',
-           dict(event_dict, **{'date_field': 'date', 'month_format': '%m', 'slug_field': 'slug'}),
+           dict(entry_dict, **{'date_field': 'published_date', 'month_format': '%m', 'slug_field': 'slug'}),
            name='entry_detail'),
     )
 
@@ -139,9 +139,9 @@ absolutely standard. ``models.py``::
        @models.permalink
        def get_absolute_url(self):
            return ('entry_detail', (), {
-               'year': self.parent.date.strftime('%Y'),
-               'month': self.parent.date.strftime('%m'),
-               'day': self.parent.date.strftime('%d'),
+               'year': self.published_date.strftime('%Y'),
+               'month': self.published_date.strftime('%m'),
+               'day': self.published_date.strftime('%d'),
                'slug': self.slug,
                })
 
@@ -151,20 +151,20 @@ Writing the templates for the application
 
 Nothing special here. The only thing you have to avoid is adding ``<html>`` or
 ``<body>`` tags and such, because you're only rendering content for a single
-content block, not the whole page. An example ``news/news_detail.html`` follows::
+content block, not the whole page. An example ``news/entry_detail.html`` follows::
 
     <div class="entry">
        <h2>{{ object.title }}</h2>
-       <span class="date">{{ object.published_date|date:"%d.%m.%Y" }}</span>
+       <span class="date">{{ object.published_date|date:"d.m.Y" }}</span>
 
        {{ object.description|linebreaks }}
     </div>
 
-And an example ``news/news_list.html``::
+And an example ``news/entry_list.html``::
 
     {% for entry in object_list %}
         <div class="entry">
-            {% ifchanged %}<div class="date">{{ entry.published_date|date:"%d.%m.%Y" }}</div>{% endifchanged %}
+            {% ifchanged %}<div class="date">{{ entry.published_date|date:"d.m.Y" }}</div>{% endifchanged %}
             <h2><a href="{{ entry.get_absolute_url }}">{{ entry.title }}</a></h2>
         </div>
     {% endfor %}
@@ -195,6 +195,17 @@ the request object::
        {% feincms_render_region feincms_page "main" request %}
     {% endblock %}
 
+Please note that this necessitates the use of
+``django.core.context_processors.request``::
+
+    TEMPLATE_CONTEXT_PROCESSORS = (
+        'django.core.context_processors.auth',
+        'django.core.context_processors.debug',
+        'django.core.context_processors.i18n',
+        'django.core.context_processors.media',
+        'django.core.context_processors.request',
+    )
+
 
 The 3rd party application might know how to handle more than one URL (the example
 news application does). These subpages won't necessarily exist, and because of this
@@ -221,7 +232,7 @@ Giving more control to the 3rd party application
 The output of the third party app is not strictly constrained to the region;
 you can pass additional fragments around, for example to extend the page title
 with content from the 3rd party application. Suppose we'd like to add the news
-title to the title tag. Add the following lines to your ``news/news_detail.html``::
+title to the title tag. Add the following lines to your ``news/entry_detail.html``::
 
     {% load applicationcontent_tags %}
     {% fragment request "title" %}{{ object.translation.title }} - {% endfragment %}
@@ -248,8 +259,21 @@ returns a HttpResponse with the ``standalone`` attribute set to True.
 For example, an application can return an non-html export file -- in that case
 you don't really want the CMS to decorate the data file with the web html templates:
 
-    xls_data = ... whatever ...
-    r = HttpResponse(xls_data, content_type="application/msexcel")
-    setattr(r, 'standalone', True)
-    return r
+    def my_view(request):
+        ...
+        xls_data = ... whatever ...
+        r = HttpResponse(xls_data, content_type="application/msexcel")
+        setattr(r, 'standalone', True)
+        return r
+
+Actually, there's even a decorator for that:
+
+::
+
+    from feincms.views.decorators import standalone
+    @standalone
+    def my_view(request):
+        ...
+
+
 

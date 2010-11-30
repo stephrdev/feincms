@@ -143,6 +143,14 @@ class LanguageLinksNode(SimpleAssignmentNodeWithVarAndArgs):
         only_existing = args.get('existing', False)
         exclude_current = args.get('excludecurrent', False)
 
+        # Preserve the trailing path when switching languages if
+        # we are inside an ApplicationContent
+        trailing_path = u''
+        request = args.get('request', None)
+        if hasattr(request, '_feincms_appcontent_parameters'):
+            if request._feincms_appcontent_parameters.get('in_appcontent_subpage'):
+                trailing_path = request.path[len(page.get_absolute_url()):]
+
         translations = dict((t.language, t) for t in page.available_translations())
         translations[page.language] = page
 
@@ -153,7 +161,7 @@ class LanguageLinksNode(SimpleAssignmentNodeWithVarAndArgs):
 
             # hardcoded paths... bleh
             if key in translations:
-                links.append((key, name, translations[key].get_absolute_url()))
+                links.append((key, name, translations[key].get_absolute_url()+trailing_path))
             elif not only_existing:
                 links.append((key, name, None))
 
@@ -256,12 +264,31 @@ def is_parent_of(page1, page2):
     {% if page|is_parent_of:feincms_page %} ... {% endif %}
     """
 
-    return page1.tree_id == page2.tree_id and page1.lft < page2.lft and page1.rght > page2.rght
+    try:
+        return page1.tree_id == page2.tree_id and page1.lft < page2.lft and page1.rght > page2.rght
+    except AttributeError:
+        return False
 
 # ------------------------------------------------------------------------
 @register.filter
 def is_equal_or_parent_of(page1, page2):
-    return page1.tree_id == page2.tree_id and page1.lft <= page2.lft and page1.rght >= page2.rght
+    try:
+        return page1.tree_id == page2.tree_id and page1.lft <= page2.lft and page1.rght >= page2.rght
+    except AttributeError:
+        return False
 
 # ------------------------------------------------------------------------
+@register.filter
+def is_sibling_of(page1, page2):
+    """
+    Determines whether a given page is a sibling of another page
+
+    {% if page|is_sibling_of:feincms_page %} ... {% endif %}
+    """
+
+    try:
+        return page1.parent_id == page2.parent_id
+    except AttributeError:
+        return False
+
 # ------------------------------------------------------------------------

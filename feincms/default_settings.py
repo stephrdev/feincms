@@ -42,16 +42,14 @@ CKEDITOR_CONFIG_URL = getattr(settings, 'CKEDITOR_CONFIG_URL', 'admin/content/ri
 FEINCMS_ADMIN_MEDIA = getattr(settings, 'FEINCMS_ADMIN_MEDIA', '/media/sys/feincms/')
 # Link to google APIs instead of using local copy of JS libraries
 FEINCMS_ADMIN_MEDIA_HOTLINKING = getattr(settings, 'FEINCMS_ADMIN_MEDIA_HOTLINKING', False)
+# avoid jQuery conflicts -- scripts should use feincms.jQuery instead of $
+FEINCMS_JQUERY_NO_CONFLICT = \
+    getattr(settings, 'FEINCMS_JQUERY_NO_CONFLICT', False)
 
 # ------------------------------------------------------------------------
 # Settings for the page module
 
-# Use SplitPaneEditor instead of TreeEditor in the page administration
-FEINCMS_PAGE_USE_SPLIT_PANE_EDITOR = getattr(settings, 'FEINCMS_PAGE_USE_SPLIT_PANE_EDITOR', False)
-
 FEINCMS_TREE_EDITOR_INCLUDE_ANCESTORS = getattr(settings, 'FEINCMS_TREE_EDITOR_INCLUDE_ANCESTORS', False)
-
-FEINCMS_ADMIN_TREE_DRAG_AND_DROP = getattr(settings, 'FEINCMS_ADMIN_TREE_DRAG_AND_DROP', True)
 
 # ------------------------------------------------------------------------
 # Enable caching intermediate results in feincms. Be aware that this might deliver
@@ -91,3 +89,5 @@ FEINCMS_TIDY_ALLOW_WARNINGS_OVERRIDE = getattr(settings, 'FEINCMS_TIDY_ALLOW_WAR
 FEINCMS_TIDY_FUNCTION = getattr(settings, 'FEINCMS_TIDY_FUNCTION', 'feincms.utils.html.tidy.tidy_html')
 
 # ------------------------------------------------------------------------
+#: Set to True if you want to run the FeinCMS test suite unconditionally:
+FEINCMS_RUN_TESTS = getattr(settings, 'FEINCMS_RUN_TESTS', False)

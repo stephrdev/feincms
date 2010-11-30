@@ -22,32 +22,31 @@ class MediaFileWidget(forms.TextInput):
         if value:
             try:
                 mf = MediaFile.objects.get(pk=value)
-                try:
-                    caption = mf.translation.caption
-                except ObjectDoesNotExist:
-                    caption = _('(no caption)')
+            except MediaFile.DoesNotExist:
+                return inputfield
 
-                if mf.type == 'image':
-                    image = feincms_thumbnail.thumbnail(mf.file.name, '240x120')
-                    image = u'<img src="%(url)s" alt="" /><br />' % {'url': image}
-                else:
-                    image = u''
+            try:
+                caption = mf.translation.caption
+            except ObjectDoesNotExist:
+                caption = _('(no caption)')
 
-                return mark_safe(u"""
-                    <div style="margin-left:10em">%(image)s
-                    <a href="%(url)s" target="_blank">%(caption)s (%(url)s)</a><br />
-                    %(inputfield)s
-                    </div>""" % {
-                        'image': image,
-                        'url': mf.file.url,
-                        'caption': caption,
-                        'inputfield': inputfield})
-            except:
-                pass
+            if mf.type == 'image':
+                image = feincms_thumbnail.thumbnail(mf.file.name, '240x120')
+                image = u'<img src="%(url)s" alt="" /><br />' % {'url': image}
+            else:
+                image = u''
+
+            return mark_safe(u"""
+                <div style="margin-left:10em">%(image)s
+                <a href="%(url)s" target="_blank">%(caption)s - %(url)s</a><br />
+                %(inputfield)s
+                </div>""" % {
+                    'image': image,
+                    'url': mf.file.url,
+                    'caption': caption,
+                    'inputfield': inputfield})
 
         return inputfield
-
-
 
 
 # FeinCMS connector
@@ -79,7 +78,7 @@ class MediaFileContent(models.Model):
 
         class MediaFileContentAdminForm(ItemEditorForm):
             mediafile = forms.ModelChoiceField(queryset=MEDIAFILE_CLASS.objects.all(),
-                widget=MediaFileWidget)
+                widget=MediaFileWidget, label=_('media file'))
             position = forms.ChoiceField(choices=POSITION_CHOICES,
                 initial=POSITION_CHOICES[0][0], label=_('position'),
                 widget=AdminRadioSelect(attrs={'class': 'radiolist'}))
@@ -87,12 +86,13 @@ class MediaFileContent(models.Model):
         cls.feincms_item_editor_form = MediaFileContentAdminForm
 
     def render(self, **kwargs):
+        request = kwargs.get('request')
         return render_to_string([
             'content/mediafile/%s_%s.html' % (self.mediafile.type, self.position),
             'content/mediafile/%s.html' % self.mediafile.type,
             'content/mediafile/%s.html' % self.position,
             'content/mediafile/default.html',
-            ], {'content': self})
+            ], { 'content': self, 'request': request })
 
 
     @classmethod

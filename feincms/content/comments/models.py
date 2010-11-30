@@ -3,6 +3,7 @@
 # ------------------------------------------------------------------------
 #
 #  Created by Martin J. Laubach on 08.01.10.
+#  skyl wuz here (11.05.10)
 #
 # ------------------------------------------------------------------------
 
@@ -15,6 +16,7 @@ from django.template import RequestContext
 from django.template.loader import render_to_string
 from django.utils.safestring import mark_safe
 from django.utils.translation import ugettext_lazy as _
+
 
 # ------------------------------------------------------------------------
 class CommentsContent(models.Model):
@@ -48,17 +50,23 @@ class CommentsContent(models.Model):
         request = kwargs.get('request')
 
         comment_page = self.parent
-        if hasattr(comment_page, 'original_translation'):
+        if hasattr(comment_page, 'original_translation') and comment_page.original_translation:
             comment_page = comment_page.original_translation
 
         f = None
         if self.comments_enabled and request.POST:
-            extra = request._feincms_appcontent_parameters.get('page_extra_path', ())
-            if len(extra) > 0 and extra[0] == u"post-comment":
-                from django.contrib.comments.views.comments import post_comment
-                r = post_comment(request)
-                if not isinstance(r, HttpResponseRedirect):
-                    f = comments.get_form()(comment_page, data=request.POST)
+
+            # I guess the drawback is that this page can't handle any other types of posts
+            # just the comments for right now, but if we just post to the current path
+            # and handle it this way .. at least it works for now.
+
+            #extra = request._feincms_appcontent_parameters.get('page_extra_path', ())
+            #if len(extra) > 0 and extra[0] == u"post-comment":
+
+            from django.contrib.comments.views.comments import post_comment
+            r = post_comment(request)
+            if not isinstance(r, HttpResponseRedirect):
+                f = comments.get_form()(comment_page, data=request.POST)
 
         if f is None:
             f = comments.get_form()(comment_page)
@@ -71,7 +79,3 @@ class CommentsContent(models.Model):
 
 # ------------------------------------------------------------------------
 
-
-
-# ------------------------------------------------------------------------
-# ------------------------------------------------------------------------

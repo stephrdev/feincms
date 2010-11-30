@@ -26,7 +26,6 @@ def handler(request, path=None):
     # prepare storage for rendered application contents
     if not hasattr(request, '_feincms_applicationcontents'):
         request._feincms_applicationcontents = {}
-        request._feincms_applicationcontents_fragments = {}
 
     # Used to provide additional app-specific context variables:
     if not hasattr(request, '_feincms_appcontent_parameters'):
@@ -35,7 +34,7 @@ def handler(request, path=None):
     page = Page.objects.best_match_for_path(path, raise404=True)
     response = build_page_response(page, request)
 
-    if request.session and request.session.get('frontend_editing', False):
+    if hasattr(request, "session") and request.session.get('frontend_editing', False):
         add_never_cache_headers(response)
 
     return response

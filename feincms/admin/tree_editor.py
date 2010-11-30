@@ -6,7 +6,9 @@ from django.db.models.query import QuerySet
 from django.http import HttpResponse, HttpResponseBadRequest, HttpResponseForbidden, HttpResponseNotFound, HttpResponseServerError
 from django.utils import simplejson
 from django.utils.safestring import mark_safe
-from django.utils.translation import ugettext_lazy as _
+from django.utils.translation import ugettext_lazy as _, ugettext
+
+from mptt.exceptions import InvalidMove
 
 from feincms import settings
 
@@ -36,28 +38,23 @@ def _build_tree_structure(cls):
     database accesses down to a minimum. The returned dictionary looks like
     this (as json dump):
 
-        {"6": {"id": 6, "children": [7, 8, 10], "parent": null, "descendants": [7, 12, 13, 8, 10]},
-         "7": {"id": 7, "children": [12], "parent": 6, "descendants": [12, 13]},
-         "8": {"id": 8, "children": [], "parent": 6, "descendants": []},
+        {"6": [7, 8, 10]
+         "7": [12],
+         "8": [],
          ...
-
+         }
     """
     all_nodes = { }
-    def add_as_descendant(n, p):
-        all_nodes[n]['descendants'].append(p)
-
-        n_parent_id = all_nodes[n]['parent']
-
-        if n_parent_id:
-            add_as_descendant(n_parent_id, p)
 
     for p_id, parent_id in cls.objects.order_by(cls._meta.tree_id_attr, cls._meta.left_attr).values_list("pk", "%s_id" % cls._meta.parent_attr):
-
-        all_nodes[p_id] = { 'id': p_id, 'children' : [ ], 'descendants' : [ ], 'parent' : parent_id }
+        all_nodes[p_id] = []
 
         if parent_id:
-            all_nodes[parent_id]['children'].append(p_id)
-            add_as_descendant(parent_id, p_id)
+            if not all_nodes.has_key(parent_id):
+                # This happens very rarely, but protect against parents that
+                # we have yet to iteratove over.
+                all_nodes[parent_id] = []
+            all_nodes[parent_id].append(p_id)
 
     return all_nodes
 
@@ -116,24 +113,29 @@ def ajax_editable_boolean(attr, short_description):
     _fn.editable_boolean_field = attr
     return _fn
 
-
+# !!!: Hack alert! Patching ChangeList, check whether this still applies post Django 1.1
+# If the ChangeList is used by a TreeEditor, we always need to order by 'tree_id' and 'lft'.
 class ChangeList(main.ChangeList):
     def get_query_set(self):
-        return super(ChangeList, self).get_query_set().order_by('tree_id', 'lft')
+        qs = super(ChangeList, self).get_query_set()
+        if isinstance(self.model_admin, TreeEditor):
+            return qs.order_by('tree_id', 'lft')
+        return qs
 
     def get_results(self, request):
-        if settings.FEINCMS_TREE_EDITOR_INCLUDE_ANCESTORS:
+        if isinstance(self.model_admin, TreeEditor) and \
+                settings.FEINCMS_TREE_EDITOR_INCLUDE_ANCESTORS:
             clauses = [Q(
                 tree_id=tree_id,
                 lft__lte=lft,
                 rght__gte=rght,
                 ) for lft, rght, tree_id in \
                     self.query_set.values_list('lft', 'rght', 'tree_id')]
-            self.query_set = self.model._default_manager.filter(reduce(
-                lambda p, q: p|q, clauses))
+            if clauses:
+                self.query_set = self.model._default_manager.filter(reduce(lambda p, q: p|q, clauses))
 
         return super(ChangeList, self).get_results(request)
-
+main.ChangeList = ChangeList
 
 # ------------------------------------------------------------------------
 # MARK: -
@@ -170,15 +172,14 @@ class TreeEditor(admin.ModelAdmin):
         the page's depth in the hierarchy.
         """
         if hasattr(item, 'get_absolute_url'):
-            r = '''<input type="hidden" class="medialibrary_file_path" value="%s"><span onclick="return page_tree_handler('%d')" id="page_marker-%d"
+            r = '''<input type="hidden" class="medialibrary_file_path" value="%s" /><span id="page_marker-%d"
             class="page_marker" style="width: %dpx;">&nbsp;</span>&nbsp;''' % (
-                item.get_absolute_url(),
-                item.id, item.id, 14+item.level*18)
+                item.get_absolute_url(), item.id, 14+item.level*18)
         else:
-            r = '''<span onclick="return page_tree_handler('%d')" id="page_marker-%d"
+            r = '''<span id="page_marker-%d"
             class="page_marker" style="width: %dpx;">&nbsp;</span>&nbsp;''' % (
-                item.id, item.id, 14+item.level*18)
-                
+                item.id, 14+item.level*18)
+
 #        r += '<span tabindex="0">'
         if hasattr(item, 'short_title'):
             r += item.short_title()
@@ -287,9 +288,6 @@ class TreeEditor(admin.ModelAdmin):
 
         return HttpResponse(simplejson.dumps(d), mimetype="application/json")
 
-    def get_changelist(self, request, **kwargs):
-        return ChangeList
-
     def changelist_view(self, request, extra_context=None, *args, **kwargs):
         """
         Handle the changelist view, the django view for the model instances
@@ -325,25 +323,25 @@ class TreeEditor(admin.ModelAdmin):
         position = request.POST.get('position')
 
         if position in ('last-child', 'left'):
-            self.model._tree_manager.move_node(cut_item, pasted_on, position)
+            try:
+                self.model._tree_manager.move_node(cut_item, pasted_on, position)
+            except InvalidMove, e:
+                self.message_user(request, unicode(e))
+                return HttpResponse('FAIL')
 
             # Ensure that model save has been run
-            source = self.model._tree_manager.get(pk=request.POST.get('cut_item'))
-            source.save()
+            cut_item = self.model._tree_manager.get(pk=cut_item.pk)
+            cut_item.save()
 
+            self.message_user(request, ugettext('%s has been moved to a new position.') %
+                cut_item)
             return HttpResponse('OK')
+
+        self.message_user(request, ugettext('Did not understand moving instruction.'))
         return HttpResponse('FAIL')
 
     def _actions_column(self, page):
-        actions = []
-        actions.append(u'<a href="#" onclick="return cut_item(\'%s\', this)" title="%s"><big>&#x2702;</big></a>' % (
-            page.pk, _('Cut')))
-
-        actions.append(u'<a class="paste_target" href="#" onclick="return paste_item(\'%s\', \'last-child\')" title="%s">&#x21b3;</a>' % (
-            page.pk, _('Insert as child')))
-        actions.append(u'<a class="paste_target" href="#" onclick="return paste_item(\'%s\', \'left\')" title="%s">&#x21b1;</a>' % (
-            page.pk, _('Insert before')))
-        return actions
+        return []
 
     def actions_column(self, page):
         return u' '.join(self._actions_column(page))

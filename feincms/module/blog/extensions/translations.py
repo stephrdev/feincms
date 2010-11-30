@@ -12,8 +12,8 @@ def register(cls, admin_cls):
         blank=True, null=True, verbose_name=_('translation of'),
         related_name='translations',
         limit_choices_to={'language': primary_language},
-        help_text=_('Leave this empty for entries in the primary language (%s).') % \
-            _(settings.LANGUAGES[0][1])))
+        help_text=_('Leave this empty for entries in the primary language.')
+        ))
 
     def available_translations(self):
         if self.language == primary_language:
@@ -36,8 +36,10 @@ def register(cls, admin_cls):
     available_translations_admin.short_description = _('available translations')
     cls.available_translations_admin = available_translations_admin
 
+    if getattr(admin_cls, 'fieldsets'):
+        admin_cls.fieldsets[0][1]['fields'].extend(['language'])
+
     admin_cls.list_display += ('language', 'available_translations_admin')
     admin_cls.list_filter += ('language',)
-    admin_cls.show_on_top += ('language',)
 
     admin_cls.raw_id_fields.append('translation_of')

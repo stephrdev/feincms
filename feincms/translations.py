@@ -25,6 +25,7 @@ for news in News.objects.filter(translations__language_code='en'):
 """
 
 from django.conf import settings
+from django.contrib import admin
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import models
@@ -90,15 +91,21 @@ class TranslatedObjectMixin(object):
                 except IndexError:
                     raise queryset.model.DoesNotExist
 
-    def get_translation(self, language_code=None):
+    def get_translation_cache_key(self, language_code=None):
+        """Return the cache key used to cache this object's translations so we can purge on-demand"""
         if not language_code:
             language_code = translation.get_language()
-
-        key = '-'.join(['%s' % s for s in
+        return '-'.join(['%s' % s for s in
             self._meta.db_table,
             self.id,
             language_code,
             ])
+
+    def get_translation(self, language_code=None):
+        if not language_code:
+            language_code = translation.get_language()
+
+        key = self.get_translation_cache_key(language_code)
 
         trans = cache.get(key)
 
@@ -130,6 +137,11 @@ class TranslatedObjectMixin(object):
     def get_absolute_url(self):
         return self.translation.get_absolute_url()
 
+    def purge_translation_cache(self):
+        cache.delete(self.get_translation_cache_key())
+        for lang in self.available_translations:
+            cache.delete(self.get_translation_cache_key(lang))
+
 
 def Translation(model):
     """
@@ -139,7 +151,8 @@ def Translation(model):
     class Inner(models.Model):
         parent = models.ForeignKey(model, related_name='translations')
         language_code = models.CharField(_('language'), max_length=10,
-		choices=settings.LANGUAGES, default=settings.LANGUAGES[0][0])
+                choices=settings.LANGUAGES, default=settings.LANGUAGES[0][0],
+                editable=len(settings.LANGUAGES) > 1)
 
         class Meta:
             abstract = True
@@ -147,5 +160,15 @@ def Translation(model):
         def short_language_code(self):
             return short_language_code(self.language_code)
 
+        def save(self, *args, **kwargs):
+            super(Inner, self).save(*args, **kwargs)
+
+            self.parent.purge_translation_cache()
+
     return Inner
 
+
+def admin_translationinline(model, inline_class=admin.StackedInline, **kwargs):
+    kwargs['max_num'] = len(settings.LANGUAGES)
+    kwargs['model'] = model
+    return type(model.__class__.__name__ + 'Inline', (inline_class,), kwargs)
